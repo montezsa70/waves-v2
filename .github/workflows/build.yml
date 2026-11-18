@@ -14,12 +14,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Unzip the project if it is a zip
+        run: |
+          Z=$(find . -iname '*.zip' -not -path './.git/*' | head -n 1)
+          if [ -n "$Z" ]; then
+            echo "Unzipping $Z"
+            mkdir -p /tmp/src
+            unzip -q "$Z" -d /tmp/src
+          fi
+
       - name: Find the project folder
         id: find
         run: |
-          S=$(find . -name settings.gradle.kts -not -path './.git/*' | head -n 1)
-          if [ -z "$S" ]; then echo "settings.gradle.kts not found in the repo"; exit 1; fi
-          echo "dir=$(dirname "$S")" >> "$GITHUB_OUTPUT"
+          S=$(find . /tmp/src -name settings.gradle.kts -not -path './.git/*' 2>/dev/null | head -n 1)
+          if [ -z "$S" ]; then
+            echo "settings.gradle.kts not found. Files in the repo:"
+            find . -not -path './.git/*' | head -n 60
+            exit 1
+          fi
+          echo "dir=$(realpath "$(dirname "$S")")" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v6
         with:
