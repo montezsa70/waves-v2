@@ -2,15 +2,10 @@ name: Build APK
 
 on:
   push:
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   apk:
@@ -19,13 +14,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Find the project folder
+        id: find
+        run: |
+          S=$(find . -name settings.gradle.kts -not -path './.git/*' | head -n 1)
+          if [ -z "$S" ]; then echo "settings.gradle.kts not found in the repo"; exit 1; fi
+          echo "dir=$(dirname "$S")" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
 
       - name: Android SDK packages
-        shell: bash
         run: |
           (yes || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
             "platforms;android-37.0" \
@@ -34,40 +35,24 @@ jobs:
             "cmake;3.22.1" > /dev/null
 
       - name: Rust
-        shell: bash
         run: |
           rustup toolchain install stable --profile minimal \
             --target aarch64-linux-android --target armv7-linux-androideabi
           rustup default stable
 
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ~/.cargo/bin/cargo-ndk
-            native/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('native/Cargo.lock', 'native/vendor/**', 'native/src/**') }}
-          restore-keys: cargo-${{ runner.os }}-
-
-      - uses: actions/cache@v6
-        with:
-          path: native-dsp/bungee
-          key: bungee-${{ hashFiles('app/build.gradle.kts') }}
-
       - name: cargo-ndk
-        shell: bash
         run: command -v cargo-ndk > /dev/null || cargo install cargo-ndk --version 4.1.2 --locked
 
       - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: 9.3.0
 
       - name: Build
-        run: ./gradlew :app:assembleDev --stacktrace
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: gradle :app:assembleDev --stacktrace
 
       - uses: actions/upload-artifact@v7
         with:
-          name: waves-dev-${{ github.sha }}
-          path: app/build/outputs/apk/dev/app-universal-dev.apk
-          retention-days: 14
+          name: waves-apk
+          path: ${{ steps.find.outputs.dir }}/app/build/outputs/apk/dev/app-universal-dev.apk
           if-no-files-found: error
